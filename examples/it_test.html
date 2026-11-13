@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тест по IT</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f4f4f4; color: #111; font-family: Roboto, "Segoe UI", Arial, sans-serif; font-size: 16px; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  .progress { color: #777; font-size: 14px; margin-bottom: 10px; }
+  .card { background: #fff; border: 1px solid #e6e6e6; border-radius: 4px; overflow: hidden; }
+  .question { padding: 30px 20px; font-size: 18px; line-height: 1.4; }
+  .answers { background: #ececec; padding: 18px 20px 12px; }
+  .hint { color: #888; font-size: 15px; margin-bottom: 16px; }
+  .list > * { background: #fff; border-bottom: 1px solid #e8e8e8; }
+  .list > *:first-child { border-radius: 4px 4px 0 0; }
+  .list > *:last-child { border-radius: 0 0 4px 4px; border-bottom: 0; }
+  .option { display: flex; align-items: center; gap: 14px; min-height: 49px; padding: 10px 14px; cursor: pointer; }
+  .option:hover { background: #fafafa; }
+  .option input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: #444; cursor: pointer; }
+  code { font-family: Consolas, "Roboto Mono", monospace; font-size: 15px; color: #d0164c; background: #f8f1f3; padding: 3px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+
+  /* ввод текста */
+  .text-answer { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #d6d6d6; border-radius: 4px; background: #fff; font: inherit; color: #111; }
+  .text-answer::placeholder { color: #c4c4c4; }
+  .text-answer:focus { outline: none; border-color: #2f6fed; }
+
+  /* соответствие */
+  .match-row { display: flex; align-items: center; min-height: 49px; padding: 6px 0 6px 14px; gap: 12px; }
+  .match-row span { flex: 1; }
+  .match-row select { flex: 1; height: 38px; padding: 0 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font: inherit; color: #111; cursor: pointer; }
+  .match-row select:focus { outline: none; border-color: #2f6fed; }
+
+  /* порядок */
+  .sort-row { display: flex; align-items: stretch; min-height: 49px; user-select: none; touch-action: none; cursor: grab; }
+  .sort-row .handle { display: flex; align-items: center; gap: 8px; width: 62px; margin: 2px 0 2px 2px; padding-left: 12px; background: #e3e3e3; color: #333; font-size: 15px; flex: none; }
+  .sort-row .text { display: flex; align-items: center; padding: 0 14px; }
+  .sort-row.dragging { opacity: .55; cursor: grabbing; }
+
+  .actions { display: flex; justify-content: flex-end; padding-top: 16px; }
+  button { border: 0; border-radius: 4px; background: #2f6fed; color: #fff; font: inherit; font-weight: 500; padding: 12px 28px; cursor: pointer; }
+  button:hover { background: #245bd0; }
+  button:focus-visible, .option input:focus-visible { outline: 2px solid #2f6fed; outline-offset: 2px; }
+  button:disabled { background: #b9c6df; cursor: not-allowed; }
+  .result { padding: 28px 20px; }
+  .result h1 { margin: 0 0 6px; font-size: 26px; }
+  .result p { margin: 0 0 18px; color: #555; }
+  .row { padding: 12px 0; border-top: 1px solid #eee; line-height: 1.5; }
+  .row b { font-weight: 500; }
+  .ok { color: #16803c; }
+  .bad { color: #c02626; }
+</style>
+</head>
+<body>
+<main>
+  <div class="progress" id="progress" aria-live="polite"></div>
+  <div class="card" id="card"></div>
+  <div class="actions" id="actions"></div>
+</main>
+<script>
+// Типы: single, multi - выбор (a - варианты, ok - индексы верных, code - как код);
+// text - ввод (accept - верные ответы); match - соответствие (rows, choices,
+// ok - индекс варианта для каждой строки); order - порядок (items в верном порядке).
+const QUESTIONS = [
+  { type: "multi", code: true, q: "Как очистить все классы элемента DOM-структуры?",
+    a: ['elem.className = ""', "elem.removeClass()", "elem.classList.clear()", 'elem.class = ""'], ok: [0] },
+  { type: "multi", code: true, q: "Выберите истинные утверждения.",
+    a: ["true == 2", "false != !1", "2 === '2'", "null == 0", "0 == false", "NaN == NaN", "undefined == null"], ok: [4, 6] },
+  { type: "single", q: "Как создать копию элемента со всеми вложенными элементами?",
+    a: ["elem.cloneNode()", "elem.copy()", "elem.cloneNode(true)", "elem.clone()"], ok: [2] },
+  { type: "text", q: "Ключевое слово для обновления строк", accept: ["update"] },
+  { type: "match", q: "Соотнесите термины с их значениями:",
+    rows: ["Отношение", "Домен атрибута", "Атрибут", "Кортеж"],
+    choices: ["Строка таблицы", "Таблица", "Поле таблицы", "Допустимые значения"], ok: [1, 3, 2, 0] },
+  { type: "order", q: "Составьте правильный запрос.",
+    items: ["UPDATE", "`users`", "SET", "`status` = 'active'", "WHERE", "`id` < 100", "LIMIT 100", ";"] },
+  { type: "single", q: "Какой код ответа HTTP означает, что ресурс не найден?",
+    a: ["200", "301", "404", "500"], ok: [2] },
+  { type: "multi", code: true, q: "Какие из методов HTTP являются идемпотентными?",
+    a: ["GET", "POST", "PUT", "DELETE"], ok: [0, 2, 3] },
+  { type: "text", q: "Как называется тег HTML для гиперссылки? Укажите только имя тега, без скобок.", accept: ["a"] },
+  { type: "match", q: "Соотнесите коды ответа HTTP с их значениями:",
+    rows: ["200", "301", "404", "500"],
+    choices: ["Not Found", "Internal Server Error", "OK", "Moved Permanently"], ok: [2, 3, 0, 1] },
+  { type: "order", q: "Расположите уровни модели TCP/IP снизу вверх.",
+    items: ["Канальный", "Сетевой", "Транспортный", "Прикладной"] },
+  { type: "single", code: true, q: "Как получить только уникальные значения столбца city из таблицы users?",
+    a: ["SELECT UNIQUE LIST city FROM users", "SELECT DISTINCT city FROM users", "SELECT city FROM users ONLY ONE", "SELECT ALL city FROM users"], ok: [1] },
+  { type: "multi", code: true, q: "Какие типы данных в Python изменяемые?",
+    a: ["list", "tuple", "dict", "str", "set"], ok: [0, 2, 4] },
+  { type: "text", q: "Какой порт по умолчанию использует HTTPS? Введите число.", accept: ["443"] },
+  { type: "single", code: true, q: "Какая команда создаёт новую ветку feature и сразу переключается на неё?",
+    a: ["git branch feature", "git switch -c feature", "git commit -b feature", "git merge feature"], ok: [1] },
+];
+
+const HINTS = {
+  single: "Выберите один вариант ответа.",
+  multi: "Укажите несколько вариантов ответа.",
+  text: "Ответ со свободным вводом. Регистр букв не учитывается.",
+  match: "Задайте правильное соответствие.",
+  order: "Расположите в правильной последовательности.",
+};
+
+const card = document.getElementById("card");
+const actions = document.getElementById("actions");
+const progress = document.getElementById("progress");
+let order, index, given;
+
+function shuffled(list) {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function prepare(q) {
+  const item = { ...q };
+  if (q.type === "single" || q.type === "multi") item.view = shuffled(q.a.map((_, i) => i));
+  if (q.type === "match") item.rowView = shuffled(q.rows.map((_, i) => i));
+  if (q.type === "order") {
+    const ids = q.items.map((_, i) => i);
+    do { item.view = shuffled(ids); } while (item.view.every((v, i) => v === i));
+  }
+  return item;
+}
+
+function start() {
+  order = QUESTIONS.map(prepare);
+  index = 0;
+  given = [];
+  showQuestion();
+}
+
+// Каждый тип возвращает { node, ready(), value() }
+function renderChoice(item) {
+  const list = el("div", "list");
+  const inputs = item.view.map(original => {
+    const label = el("label", "option");
+    const input = document.createElement("input");
+    input.type = item.type === "multi" ? "checkbox" : "radio";
+    input.name = "answer";
+    input.value = original;
+    label.append(input, item.code ? el("code", "", item.a[original]) : el("span", "", item.a[original]));
+    list.append(label);
+    return input;
+  });
+  return {
+    node: list,
+    ready: () => inputs.some(i => i.checked),
+    value: () => inputs.filter(i => i.checked).map(i => Number(i.value)),
+  };
+}
+
+function renderText() {
+  const input = el("input", "text-answer");
+  input.type = "text";
+  input.placeholder = "Введите свой ответ";
+  input.autocomplete = "off";
+  return { node: input, ready: () => input.value.trim() !== "", value: () => input.value };
+}
+
+function renderMatch(item) {
+  const list = el("div", "list");
+  const selects = item.rowView.map(row => {
+    const line = el("div", "match-row");
+    const select = document.createElement("select");
+    select.dataset.row = row;
+    select.append(new Option("—", ""));
+    item.choices.forEach((choice, i) => select.append(new Option(choice, i)));
+    line.append(el("span", "", item.rows[row]), select);
+    list.append(line);
+    return select;
+  });
+  return {
+    node: list,
+    ready: () => selects.every(s => s.value !== ""),
+    value: () => {
+      const out = [];
+      selects.forEach(s => { out[Number(s.dataset.row)] = Number(s.value); });
+      return out;
+    },
+  };
+}
+
+function renderOrder(item, onChange) {
+  const list = el("div", "list");
+  let current = [...item.view];
+
+  function draw() {
+    list.replaceChildren(...current.map((id, pos) => {
+      const row = el("div", "sort-row");
+      row.dataset.id = id;
+      const handle = el("div", "handle");
+      handle.append(el("span", "", "↕"), el("span", "", `${pos + 1}.`));
+      row.append(handle, el("div", "text", item.items[id]));
+      row.addEventListener("pointerdown", e => startDrag(e, row));
+      return row;
+    }));
+  }
+
+  function startDrag(event, row) {
+    event.preventDefault();
+    row.classList.add("dragging");
+    const move = e => {
+      const rows = [...list.children];
+      const target = rows.find(r => {
+        const box = r.getBoundingClientRect();
+        return e.clientY >= box.top && e.clientY <= box.bottom;
+      });
+      if (!target || target === row) return;
+      const from = rows.indexOf(row);
+      const to = rows.indexOf(target);
+      list.insertBefore(row, to > from ? target.nextSibling : target);
+    };
+    // слушаем весь документ: при переносе строки в DOM захват указателя сбрасывается
+    const end = () => {
+      row.classList.remove("dragging");
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", end);
+      document.removeEventListener("pointercancel", end);
+      current = [...list.children].map(r => Number(r.dataset.id));
+      draw();
+      onChange();
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", end);
+    document.addEventListener("pointercancel", end);
+  }
+
+  draw();
+  return { node: list, ready: () => true, value: () => [...current] };
+}
+
+function showQuestion() {
+  const item = order[index];
+  progress.textContent = `Вопрос ${index + 1} из ${order.length}`;
+  card.replaceChildren();
+  actions.replaceChildren();
+
+  card.append(el("div", "question", item.q));
+  const box = el("div", "answers");
+  box.append(el("div", "hint", HINTS[item.type]));
+
+  const isLast = index === order.length - 1;
+  const next = el("button", "", isLast ? "Завершить" : "Следующий вопрос");
+  next.id = "next";
+  const update = () => { next.disabled = !answer.ready(); };
+
+  const answer =
+    item.type === "text" ? renderText() :
+    item.type === "match" ? renderMatch(item) :
+    item.type === "order" ? renderOrder(item, update) :
+    renderChoice(item);
+  box.append(answer.node);
+  card.append(box);
+
+  box.addEventListener("change", update);
+  box.addEventListener("input", update);
+  update();
+  next.addEventListener("click", () => {
+    given.push(answer.value());
+    index++;
+    if (index < order.length) showQuestion(); else showResult();
+  });
+  actions.append(next);
+}
+
+function isRight(item, answer) {
+  switch (item.type) {
+    case "text": return item.accept.includes(answer.trim().toLowerCase());
+    case "match": return item.ok.every((v, i) => answer[i] === v);
+    case "order": return answer.every((v, i) => v === i);
+    default: return answer.length === item.ok.length && item.ok.every(i => answer.includes(i));
+  }
+}
+
+function rightAnswer(item) {
+  switch (item.type) {
+    case "text": return item.accept[0];
+    case "match": return item.rows.map((r, i) => `${r} — ${item.choices[item.ok[i]]}`).join("; ");
+    case "order": return item.items.join(" ");
+    default: return item.ok.map(k => item.a[k]).join(", ");
+  }
+}
+
+function showResult() {
+  const right = order.filter((item, i) => isRight(item, given[i])).length;
+  const percent = Math.round(right / order.length * 100);
+  progress.textContent = "Тест завершён";
+  card.replaceChildren();
+  actions.replaceChildren();
+
+  const result = el("div", "result");
+  result.append(el("h1", "", `Результат: ${percent}%`));
+  result.append(el("p", "", `Правильных ответов: ${right} из ${order.length}`));
+  order.forEach((item, i) => {
+    const good = isRight(item, given[i]);
+    const row = el("div", "row");
+    row.append(el("b", good ? "ok" : "bad", good ? "Верно: " : "Ошибка: "), document.createTextNode(item.q));
+    if (!good) row.append(document.createElement("br"), document.createTextNode("Правильно: " + rightAnswer(item)));
+    result.append(row);
+  });
+  card.append(result);
+
+  const again = el("button", "", "Пройти заново");
+  again.addEventListener("click", start);
+  actions.append(again);
+}
+
+start();
+</script>
+</body>
+</html>

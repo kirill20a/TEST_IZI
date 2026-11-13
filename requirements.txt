@@ -1,0 +1,7 @@
+mss
+pillow
+pyautogui
+pynput
+playwright
+requests
+pywin32; sys_platform == "win32"

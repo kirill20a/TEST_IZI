@@ -1,0 +1,19 @@
+# Личные настройки и данные (не выкладывать!)
+split_config.json
+config.json
+screenshots/
+browser-profile/
+flash_mode
+
+# Результаты сборки
+dist/
+build/
+*.spec
+icon.ico
+TEST_IZI.exe
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
