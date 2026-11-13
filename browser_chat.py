@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import base64
 import os
 import subprocess
 import sys
@@ -19,6 +20,31 @@ from PIL import Image
 # Где искать поле ввода и кнопку загрузки, если в настройках не указано своё
 INPUT_SELECTORS = "textarea, [contenteditable='true']"
 FILE_SELECTORS = ["input[type=file][accept*='image']", "input[type=file]"]
+
+
+# Вставка картинки событием на странице: для сайта это то же самое, что Ctrl+V
+# (paste) или перетаскивание файла мышью (drop), но работает и в фоновом окне.
+INSERT_JS = """(el, [b64, name, how]) => {
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], name, {type: 'image/png'}));
+    el.focus();
+    if (how === 'paste') {
+        el.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true}));
+    } else {
+        for (const type of ['dragenter', 'dragover', 'drop'])
+            el.dispatchEvent(new DragEvent(type, {dataTransfer: dt, bubbles: true, cancelable: true}));
+    }
+}"""
+
+# Сколько на странице признаков прикреплённой картинки: превью (blob:/data:) и имя файла
+ATTACH_MARK_JS = """(name) => {
+    const imgs = [...document.images].filter(i => /^(blob|data):/.test(i.src)).length;
+    const bgs = [...document.querySelectorAll('[style*="background-image"]')]
+        .filter(e => /blob:|data:/.test(e.style.backgroundImage)).length;
+    const names = document.body.innerText.split(name).length - 1;
+    return imgs + bgs + names;
+}"""
 
 
 class ChatError(Exception):
@@ -150,14 +176,42 @@ class BrowserChat:
 
     # ----- отправка и чтение -----
 
+    def attach_image(self, page, image: Image.Image) -> None:
+        """Прикрепляет скриншот: загрузкой файла, а если её нет -
+        вставкой как через Ctrl+V (2 попытки) и перетаскиванием (1 попытка)."""
+        self.image_path.parent.mkdir(parents=True, exist_ok=True)
+        image.convert("RGB").save(self.image_path, "PNG")
+        wait_upload = int(float(self.cfg["upload_wait"]) * 1000)
+        try:
+            file_input = self.find_file_input()
+        except ChatError:
+            file_input = None
+        if file_input is not None:
+            file_input.set_input_files(str(self.image_path))
+            page.wait_for_timeout(wait_upload)
+            return
+
+        name = self.image_path.name
+        b64 = base64.b64encode(self.image_path.read_bytes()).decode("ascii")
+        before = page.evaluate(ATTACH_MARK_JS, name)
+        attempts = ["paste", "paste", "drop"]
+        for number, how in enumerate(attempts, 1):
+            self.find_input().evaluate(INSERT_JS, [b64, name, how])
+            page.wait_for_timeout(1000)  # дать странице показать превью
+            if page.evaluate(ATTACH_MARK_JS, name) > before:
+                if number > 1:
+                    way = "вставкой (Ctrl+V)" if how == "paste" else "перетаскиванием"
+                    print(f"Картинка прикреплена {way} с {number}-й попытки.")
+                page.wait_for_timeout(wait_upload)
+                return
+        raise ChatError("не получилось прикрепить картинку: на странице нет загрузки файла, "
+                        "а вставка (Ctrl+V, 2 попытки) и перетаскивание не сработали")
+
     def send(self, text: str, image: Image.Image | None = None) -> None:
         page = self.connect()
         try:
             if image is not None:
-                self.image_path.parent.mkdir(parents=True, exist_ok=True)
-                image.convert("RGB").save(self.image_path, "PNG")
-                self.find_file_input().set_input_files(str(self.image_path))
-                page.wait_for_timeout(int(float(self.cfg["upload_wait"]) * 1000))
+                self.attach_image(page, image)
             box = self.find_input()
             box.fill(text)
             # Enter не сработает, пока картинка ещё грузится: жмём, пока поле не очистится
